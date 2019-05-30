@@ -6,6 +6,16 @@
 /* defines                                                              */
 /************************************************************************/
 
+#define AFEC_CHANNEL_RES_PIN 0 //PD30
+#define AFEC_CHANNEL_RES_PIN1 8 //PA19
+
+/** Reference voltage for AFEC,in mv. */
+#define VOLT_REF        (3300)
+
+/** The maximal digital value */
+/** 2^12 - 1                  */
+#define MAX_DIGITAL     (4095)
+
 
 //BOTOES
 
@@ -22,10 +32,10 @@
 #define BUTB_PIO_IDX_MASK  (1u << BUTB_PIO_IDX)
 
 //Configs button Select
-#define BUTSELECT_PIO           PIOA
-#define BUTSELECT_PIO_ID        ID_PIOA
-#define BUTSELECT_PIO_IDX       24u
-#define BUTSELECT_PIO_IDX_MASK  (1u << BUTSELECT_PIO_IDX)
+#define BUTZ_PIO           PIOA
+#define BUTZ_PIO_ID        ID_PIOA
+#define BUTZ_PIO_IDX       24u
+#define BUTZ_PIO_IDX_MASK  (1u << BUTZ_PIO_IDX)
 
 //Configs button Start
 #define BUTSTART_PIO           PIOA
@@ -40,6 +50,23 @@
 #define LEDA_PIO_ID ID_PIOB
 #define LEDA_PIO_IDX 2u
 #define LEDA_PIO_IDX_MASK (1u << LEDA_PIO_IDX)
+
+#define LEDB_PIO PIOB
+#define LEDB_PIO_ID ID_PIOB
+#define LEDB_PIO_IDX 3u
+#define LEDB_PIO_IDX_MASK (1u << LEDB_PIO_IDX)
+
+
+#define LEDZ_PIO PIOC
+#define LEDZ_PIO_ID ID_PIOC
+#define LEDZ_PIO_IDX 30u
+#define LEDZ_PIO_IDX_MASK (1u << LEDZ_PIO_IDX)
+
+#define LEDSTART_PIO PIOC
+#define LEDSTART_PIO_ID ID_PIOC
+#define LEDSTART_PIO_IDX 17u
+#define LEDSTART_PIO_IDX_MASK (1u << LEDSTART_PIO_IDX)
+
 
 
 /*
@@ -86,15 +113,40 @@ QueueHandle_t xQueueBUTA;
 QueueHandle_t xQueueBUTB;
 QueueHandle_t xQueueBUTZ;
 QueueHandle_t xQueueBUTSTART;
+QueueHandle_t xQueueAnalogX;
+QueueHandle_t xQueueAnalogY;
 volatile uint32_t g_tcCv = 0;
 
+/************************************************************************/
+/* ADC                                                                  */
+/************************************************************************/
+/** The conversion data is done flag */
+volatile bool g_is_conversion_done = false;
 
+/** The conversion data value */
+volatile uint32_t g_res_value = 0;
+volatile uint32_t g_res_value1 = 0;
 
 
 /************************************************************************/
 /* callbacks                                                            */
 /************************************************************************/
+/**
+ * \brief AFEC interrupt callback function.
+ */
+static void AFEC_Res_callback(void)
+{
+	
+	g_res_value = afec_channel_get_value(AFEC0, AFEC_CHANNEL_RES_PIN);
+	xQueueSendFromISR( xQueueAnalogX, &g_res_value, 0);
+}
 
+static void AFEC_Res_callback1(void)
+{
+	
+	g_res_value1 = afec_channel_get_value(AFEC0, AFEC_CHANNEL_RES_PIN1);
+	xQueueSendFromISR( xQueueAnalogY, &g_res_value1, 0);
+}
 void butA_callback(void)
 {
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -118,6 +170,7 @@ void butStart_callback(void)
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 	xSemaphoreGiveFromISR(xSemaphoreStart, &xHigherPriorityTaskWoken);
 }
+
 
 /************************************************************************/
 /* RTOS application funcs                                               */
@@ -172,6 +225,16 @@ extern void vApplicationMallocFailedHook(void)
 /* funcoes                                                              */
 /************************************************************************/
 
+/*
+char set_analog_result(uint32_t input) {
+	char b[32];
+	sprintf(b, ";%d;", input);
+	printf(b);
+	return b;
+	
+}*/
+
+
 
 void pisca_led(uint LED_PIO, uint LED_IDX_MASK){
 	pio_set(LED_PIO, LED_IDX_MASK);
@@ -215,13 +278,15 @@ void send_command(char buttonStart, char buttonA, char buttonB, char eof ){
 			usart_write(USART_COM, eof);
 }*/
 
-void send_command(char buttonStart , char buttonA, char buttonB, char eof ){
+void send_command(char buttonStart , char buttonA, char buttonB, char buttonZ,char eof ){
 	while(!usart_is_tx_ready(USART_COM));
 	usart_write(USART_COM, buttonStart);
 	while(!usart_is_tx_ready(USART_COM));
 	usart_write(USART_COM, buttonA);
 	while(!usart_is_tx_ready(USART_COM));
 	usart_write(USART_COM, buttonB);
+	while(!usart_is_tx_ready(USART_COM));
+	usart_write(USART_COM, buttonZ);
 	while(!usart_is_tx_ready(USART_COM));
 	usart_write(USART_COM, '0');
 
@@ -305,14 +370,13 @@ void io_init(void){
     pio_configure(LEDA_PIO, PIO_OUTPUT_0, LEDA_PIO_IDX_MASK, PIO_DEFAULT);
 
   //**************************************************************
-/*
 
   // Inicializa clock do periférico PIO responsavel pelo botao B
 	pmc_enable_periph_clk(BUTB_PIO_ID);
 
   // Configura PIO para lidar com o pino do botão como entrada
   // com pull-up
-	pio_configure(BUTB_PIO, PIO_INPUT, BUTB_PIO_IDX_MASK, PIO_PULLUP);
+	pio_configure(BUTB_PIO, PIO_INPUT, BUTB_PIO_IDX_MASK, PIO_PULLUP | PIO_DEBOUNCE);
 
   // Configura interrupção no pino referente ao botao e associa
   // função de callback caso uma interrupção for gerada
@@ -330,35 +394,41 @@ void io_init(void){
   // com prioridade 4 (quanto mais próximo de 0 maior)
   NVIC_EnableIRQ(BUTB_PIO_ID);
   NVIC_SetPriority(BUTB_PIO_ID, 4); // Prioridade 4
+  
+  pmc_enable_periph_clk(LEDB_PIO_ID);
+  pio_configure(LEDB_PIO, PIO_OUTPUT_0, LEDB_PIO_IDX_MASK, PIO_DEFAULT);
 
-  // **************************************************************
+  //**************************************************************
 
   // Inicializa clock do periférico PIO responsavel pelo botao Select
-	/ *pmc_enable_periph_clk* /(BUTSELECT_PIO_ID);
+	pmc_enable_periph_clk(BUTZ_PIO_ID);
 
   // Configura PIO para lidar com o pino do botão como entrada
   // com pull-up
-/ *
-	pio_configure(BUTSELECT_PIO, PIO_INPUT, BUTSELECT_PIO_IDX_MASK, PIO_PULLUP);
-* /
+
+	pio_configure(BUTZ_PIO, PIO_INPUT, BUTZ_PIO_IDX_MASK, PIO_PULLUP | PIO_DEBOUNCE);
+
 
   // Configura interrupção no pino referente ao botao e associa
   // função de callback caso uma interrupção for gerada
   // a função de callback é a: but_callback()
-/ *
-  pio_handler_set(BUTSELECT_PIO,
-                  BUTSELECT_PIO_ID,
-                  BUTSELECT_PIO_IDX_MASK,
+
+  pio_handler_set(BUTZ_PIO,
+                  BUTZ_PIO_ID,
+                  BUTZ_PIO_IDX_MASK,
                   PIO_IT_FALL_EDGE,
-                  butStart_callback());* /
+                  butZ_callback);
 
   // Ativa interrupção
- // pio_enable_interrupt(BUTSELECT_PIO, BUTSELECT_PIO_IDX_MASK);
+  pio_enable_interrupt(BUTZ_PIO, BUTZ_PIO_IDX_MASK);
 
   // Configura NVIC para receber interrupcoes do PIO do botao
   // com prioridade 4 (quanto mais próximo de 0 maior)
-  //NVIC_EnableIRQ(BUTSELECT_PIO_ID);
-  //NVIC_SetPriority(BUTSELECT_PIO_ID, 4); // Prioridade 4
+  NVIC_EnableIRQ(BUTZ_PIO_ID);
+  NVIC_SetPriority(BUTZ_PIO_ID, 4); // Prioridade 4
+  
+  pmc_enable_periph_clk(LEDZ_PIO_ID);
+  pio_configure(LEDZ_PIO, PIO_OUTPUT_0, LEDZ_PIO_IDX_MASK, PIO_DEFAULT);
 
   // **************************************************************
 
@@ -367,7 +437,7 @@ void io_init(void){
 
   // Configura PIO para lidar com o pino do botão como entrada
   // com pull-up
-	pio_configure(BUTSTART_PIO, PIO_INPUT, BUTSTART_PIO_IDX_MASK, PIO_PULLUP);
+	pio_configure(BUTSTART_PIO, PIO_INPUT, BUTSTART_PIO_IDX_MASK, PIO_PULLUP | PIO_DEBOUNCE);
 
   // Configura interrupção no pino referente ao botao e associa
   // função de callback caso uma interrupção for gerada
@@ -388,8 +458,58 @@ void io_init(void){
 	
 
   // Configura led
-	pmc_enable_periph_clk(LED_PIO_ID);
-	pio_configure(LED_PIO, PIO_OUTPUT_0, LED_IDX_MASK, PIO_DEFAULT);*/
+	pmc_enable_periph_clk(LEDSTART_PIO);
+	pio_configure(LEDSTART_PIO, PIO_OUTPUT_0, LEDSTART_PIO_IDX_MASK, PIO_DEFAULT);
+}
+
+static void config_ADC_TEMP_RES(void){
+/*************************************
+   * Ativa e configura AFEC
+   *************************************/
+  /* Ativa AFEC - 0 */
+	afec_enable(AFEC0);
+
+	/* struct de configuracao do AFEC */
+	struct afec_config afec_cfg;
+
+	/* Carrega parametros padrao */
+	afec_get_config_defaults(&afec_cfg);
+
+	/* Configura AFEC */
+	afec_init(AFEC0, &afec_cfg);
+
+	/* Configura trigger por software */
+	afec_set_trigger(AFEC0, AFEC_TRIG_SW);
+
+
+	/* configura call back */
+	afec_set_callback(AFEC0, AFEC_INTERRUPT_EOC_0, AFEC_Res_callback, 1);
+	afec_set_callback(AFEC0, AFEC_INTERRUPT_EOC_8, AFEC_Res_callback1, 1);
+	
+
+	/*** Configuracao espec?fica do canal AFEC ***/
+	struct afec_ch_config afec_ch_cfg;
+	afec_ch_get_config_defaults(&afec_ch_cfg);
+	afec_ch_cfg.gain = AFEC_GAINVALUE_0;
+
+	/*
+	* Calibracao:
+	* Because the internal ADC offset is 0x200, it should cancel it and shift
+	 down to 0.
+	 */
+	
+	afec_channel_set_analog_offset(AFEC0, AFEC_CHANNEL_RES_PIN1, 0x200);
+	afec_channel_set_analog_offset(AFEC0, AFEC_CHANNEL_RES_PIN, 0x200);
+
+	/***  Configura sensor de temperatura ***/
+	struct afec_temp_sensor_config afec_temp_sensor_cfg;
+
+	afec_temp_sensor_get_config_defaults(&afec_temp_sensor_cfg);
+	afec_temp_sensor_set_config(AFEC0, &afec_temp_sensor_cfg);
+
+	/* Selecina canal e inicializa convers?o */
+	afec_channel_enable(AFEC0, AFEC_CHANNEL_RES_PIN);
+	afec_channel_enable(AFEC0, AFEC_CHANNEL_RES_PIN1);
 }
 
 void usart_put_string(Usart *usart, char str[]) {
@@ -452,9 +572,10 @@ void task_bluetooth(void){
 	
 		
 		xQueueBUTA = xQueueCreate( 10, sizeof( int32_t ) );
-		char buttonA = '0';
-		char buttonB = '0';
-		char buttonStart = '0';
+		xQueueBUTB = xQueueCreate( 10, sizeof( int32_t ) );
+		xQueueBUTZ = xQueueCreate( 10, sizeof( int32_t ) );
+		xQueueBUTSTART = xQueueCreate( 10, sizeof( int32_t ) );
+
 		char eof = 'X';
 		char buffer[1024];
   
@@ -464,12 +585,29 @@ void task_bluetooth(void){
   io_init();
   
   while(1){
-	if (xQueueReceive( xQueueBUTA, &(buttonA), ( TickType_t ) 10 / portTICK_PERIOD_MS)) {
+	char buttonA = '0';
+	char buttonB = '0';
+	char buttonZ = '0';
+	char buttonStart = '0';
+	if (xQueueReceive( xQueueBUTA, &(buttonA), ( TickType_t ) 10 / portTICK_PERIOD_MS) || xQueueReceive( xQueueBUTB, &(buttonA), ( TickType_t ) 10 / portTICK_PERIOD_MS) || xQueueReceive( xQueueBUTZ, &(buttonA), ( TickType_t ) 10 / portTICK_PERIOD_MS)|| xQueueReceive( xQueueBUTSTART, &(buttonA), ( TickType_t ) 10 / portTICK_PERIOD_MS)) {
+		send_command(buttonStart,buttonA,buttonB,buttonZ,eof);
+		printf("A\n");
+	}
+/*
+	if (xQueueReceive( xQueueBUTB, &(buttonB), ( TickType_t ) 10 / portTICK_PERIOD_MS)) {
 		send_command(0,buttonA,0,eof);
 		printf("A\n");
-		
 	}
-   // vTaskDelay( 10 / portTICK_PERIOD_MS);
+	if (xQueueReceive( xQueueBUTZ, &(buttonZ), ( TickType_t ) 10 / portTICK_PERIOD_MS)) {
+		send_command(0,buttonA,0,eof);
+		printf("A\n");
+	}
+	if (xQueueReceive( xQueueBUTSTART, &(buttonStart), ( TickType_t ) 10 / portTICK_PERIOD_MS)) {
+		send_command(0,buttonA,0,eof);
+		printf("A\n");
+	}*/
+	
+    vTaskDelay( 10 / portTICK_PERIOD_MS);
   }
 }
 void task_buttons(void *pvParameters)
@@ -502,18 +640,65 @@ void task_buttons(void *pvParameters)
 	}
 
 	while (true) {
-		if( xSemaphoreTake(xSemaphoreA, ( TickType_t ) 500) == pdTRUE){
+		if( xSemaphoreTake(xSemaphoreA, ( TickType_t ) 1) == pdTRUE){
 			pisca_led(LEDA_PIO,LEDA_PIO_IDX_MASK);
-			
-			
 			
 			xQueueSend(xQueueBUTA, '1',0);
 		}
-		if( xSemaphoreTake(xSemaphoreB, ( TickType_t ) 500) == pdTRUE ){
+		if( xSemaphoreTake(xSemaphoreB, ( TickType_t ) 1) == pdTRUE ){
+			pisca_led(LEDB_PIO,LEDB_PIO_IDX_MASK);
 			
-			
+			xQueueSend(xQueueBUTB, '1',0);
 		}
+		if( xSemaphoreTake(xSemaphoreZ, ( TickType_t ) 1) == pdTRUE ){
+			pisca_led(LEDZ_PIO,LEDZ_PIO_IDX_MASK);
+			
+			xQueueSend(xQueueBUTZ, '1',0);
+		}
+		if( xSemaphoreTake(xSemaphoreStart, ( TickType_t ) 1) == pdTRUE ){
+			pisca_led(LEDSTART_PIO,LEDSTART_PIO_IDX_MASK);
+					
+			xQueueSend(xQueueBUTSTART, '1',0);
+		}
+		vTaskDelay(50);
 		
+	}
+}
+
+void task_afec(void){
+	xQueueAnalogX = xQueueCreate( 10, sizeof( int32_t ) );
+	xQueueAnalogY = xQueueCreate( 10, sizeof( int32_t ) );
+	config_ADC_TEMP_RES();
+	afec_start_software_conversion(AFEC0);
+
+/*
+	uint32_t g_res_value = 0;
+	uint32_t g_res_value1 = 0;*/
+	uint32_t Jx;
+	uint32_t Jy;
+	char analog_x[32];
+	char analog_y[32];
+	
+	while (1) {
+		if (xQueueReceive( xQueueAnalogX, &(Jx), ( TickType_t )  1 / portTICK_PERIOD_MS)) {
+			sprintf(analog_x,";%d;",Jx);
+			printf("%c",analog_x);
+			//analog_x = set_analog_result(Jx);
+			//printf("Temp : %d \r\n", tempVal);
+			afec_start_software_conversion(AFEC0);
+			//xQueueSend( xQueueAnalogX, &analog_x, 0);
+			vTaskDelay(1/portTICK_PERIOD_MS);
+
+		}
+		if (xQueueReceive( xQueueAnalogY, &(Jy), ( TickType_t )  1 / portTICK_PERIOD_MS)) {
+			//analog_y = set_analog_result(Jy);
+			sprintf(analog_y,";%d;",Jy);
+			//printf("Temp : %d \r\n", tempVal);
+			afec_start_software_conversion(AFEC0);
+			//xQueueSend( xQueueAnalogY, &analog_y, 0);
+			vTaskDelay(2/portTICK_PERIOD_MS);
+
+		}
 	}
 }
 
