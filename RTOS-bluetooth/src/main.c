@@ -115,6 +115,8 @@ QueueHandle_t xQueueBUTZ;
 QueueHandle_t xQueueBUTSTART;
 QueueHandle_t xQueueAnalogX;
 QueueHandle_t xQueueAnalogY;
+QueueHandle_t xQueueJX;
+QueueHandle_t xQueueJY;
 volatile uint32_t g_tcCv = 0;
 
 /************************************************************************/
@@ -136,7 +138,6 @@ volatile uint32_t g_res_value1 = 0;
  */
 static void AFEC_Res_callback(void)
 {
-	
 	g_res_value = afec_channel_get_value(AFEC0, AFEC_CHANNEL_RES_PIN);
 	xQueueSendFromISR( xQueueAnalogX, &g_res_value, 0);
 }
@@ -238,7 +239,7 @@ char set_analog_result(uint32_t input) {
 
 void pisca_led(uint LED_PIO, uint LED_IDX_MASK){
 	pio_set(LED_PIO, LED_IDX_MASK);
-	delay_ms(50);
+	vTaskDelay(50);
 	pio_clear(LED_PIO, LED_IDX_MASK);
 }
 
@@ -278,7 +279,7 @@ void send_command(char buttonStart, char buttonA, char buttonB, char eof ){
 			usart_write(USART_COM, eof);
 }*/
 
-void send_command(char buttonStart , char buttonA, char buttonB, char buttonZ,char eof ){
+void send_command(char buttonStart , char buttonA, char buttonB, char buttonZ,char analog_x[], char analog_y[],char eof ){
 	while(!usart_is_tx_ready(USART_COM));
 	usart_write(USART_COM, buttonStart);
 	while(!usart_is_tx_ready(USART_COM));
@@ -288,10 +289,25 @@ void send_command(char buttonStart , char buttonA, char buttonB, char buttonZ,ch
 	while(!usart_is_tx_ready(USART_COM));
 	usart_write(USART_COM, buttonZ);
 	while(!usart_is_tx_ready(USART_COM));
-	usart_write(USART_COM, '0');
-
+	usart_write(USART_COM, analog_x[0]);
+	int x = 1;
+	while(analog_x[x]!= ';'){
+		while(!usart_is_tx_ready(USART_COM));
+		usart_write(USART_COM, analog_x[x]);
+		x+=1;
+	}
 	while(!usart_is_tx_ready(USART_COM));
-	usart_write(USART_COM, '0');
+	usart_write(USART_COM, analog_x[x]);
+	while(!usart_is_tx_ready(USART_COM));
+	usart_write(USART_COM, analog_y[0]);
+	int y = 1;
+	while(analog_y[y]!= ';'){
+		while(!usart_is_tx_ready(USART_COM));
+		usart_write(USART_COM, analog_y[y]);
+		y+=1;
+	}
+	while(!usart_is_tx_ready(USART_COM));
+	usart_write(USART_COM, analog_y[y]);
 
 	while(!usart_is_tx_ready(USART_COM));
 	usart_write(USART_COM, eof);
@@ -483,14 +499,15 @@ static void config_ADC_TEMP_RES(void){
 
 
 	/* configura call back */
-	afec_set_callback(AFEC0, AFEC_INTERRUPT_EOC_0, AFEC_Res_callback, 1);
-	afec_set_callback(AFEC0, AFEC_INTERRUPT_EOC_8, AFEC_Res_callback1, 1);
+	afec_set_callback(AFEC0, AFEC_INTERRUPT_EOC_0, AFEC_Res_callback, 5);
+	afec_set_callback(AFEC0, AFEC_INTERRUPT_EOC_8, AFEC_Res_callback1, 5);
 	
 
 	/*** Configuracao espec?fica do canal AFEC ***/
 	struct afec_ch_config afec_ch_cfg;
 	afec_ch_get_config_defaults(&afec_ch_cfg);
 	afec_ch_cfg.gain = AFEC_GAINVALUE_0;
+	afec_ch_set_config(AFEC0, AFEC_CHANNEL_RES_PIN, &afec_ch_cfg);
 
 	/*
 	* Calibracao:
@@ -575,6 +592,8 @@ void task_bluetooth(void){
 		xQueueBUTB = xQueueCreate( 10, sizeof( int32_t ) );
 		xQueueBUTZ = xQueueCreate( 10, sizeof( int32_t ) );
 		xQueueBUTSTART = xQueueCreate( 10, sizeof( int32_t ) );
+		xQueueJX = xQueueCreate(10, sizeof(int32_t));
+		xQueueJY = xQueueCreate(10,sizeof(int32_t));
 
 		char eof = 'X';
 		char buffer[1024];
@@ -589,8 +608,15 @@ void task_bluetooth(void){
 	char buttonB = '0';
 	char buttonZ = '0';
 	char buttonStart = '0';
-	if (xQueueReceive( xQueueBUTA, &(buttonA), ( TickType_t ) 10 / portTICK_PERIOD_MS) || xQueueReceive( xQueueBUTB, &(buttonA), ( TickType_t ) 10 / portTICK_PERIOD_MS) || xQueueReceive( xQueueBUTZ, &(buttonA), ( TickType_t ) 10 / portTICK_PERIOD_MS)|| xQueueReceive( xQueueBUTSTART, &(buttonA), ( TickType_t ) 10 / portTICK_PERIOD_MS)) {
-		send_command(buttonStart,buttonA,buttonB,buttonZ,eof);
+	uint32_t Jx;
+	uint32_t Jy;
+	char analog_x[32];
+	char analog_y[32];
+	
+	if (xQueueReceive( xQueueBUTA, &(buttonA), ( TickType_t ) 10 / portTICK_PERIOD_MS) || xQueueReceive( xQueueBUTB, &(buttonA), ( TickType_t ) 10 / portTICK_PERIOD_MS) || xQueueReceive( xQueueBUTZ, &(buttonA), ( TickType_t ) 10 / portTICK_PERIOD_MS)|| xQueueReceive( xQueueBUTSTART, &(buttonA), ( TickType_t ) 10 / portTICK_PERIOD_MS)|| xQueueReceive( xQueueJX, &(Jx), ( TickType_t ) 10 / portTICK_PERIOD_MS)|| xQueueReceive( xQueueJY, &(Jy), ( TickType_t ) 10 / portTICK_PERIOD_MS)) {
+		sprintf(analog_x,";%d;",Jx);
+		sprintf(analog_y,";%d;",Jy);
+		send_command(buttonStart,buttonA,buttonB,buttonZ,analog_x,analog_y,eof);
 		printf("A\n");
 	}
 /*
@@ -641,9 +667,9 @@ void task_buttons(void *pvParameters)
 
 	while (true) {
 		if( xSemaphoreTake(xSemaphoreA, ( TickType_t ) 1) == pdTRUE){
-			pisca_led(LEDA_PIO,LEDA_PIO_IDX_MASK);
-			
-			xQueueSend(xQueueBUTA, '1',0);
+			//pisca_led(LEDA_PIO,LEDA_PIO_IDX_MASK);
+			int32_t teste = 1;
+			xQueueSend(xQueueBUTA, &teste,0);
 		}
 		if( xSemaphoreTake(xSemaphoreB, ( TickType_t ) 1) == pdTRUE ){
 			pisca_led(LEDB_PIO,LEDB_PIO_IDX_MASK);
@@ -679,18 +705,43 @@ void task_afec(void){
 	char analog_x[32];
 	char analog_y[32];
 	
+	
+	while(1){
+		if (xQueueReceive( xQueueAnalogX, &(Jx), ( TickType_t )  10 / portTICK_PERIOD_MS)) {
+			//sprintf(analog_x,";%d;",Jx);
+			//printf("%s",analog_x);
+		
+			afec_start_software_conversion(AFEC0);
+			xQueueSend( xQueueJX, &Jx, 0);
+			//vTaskDelay(1/portTICK_PERIOD_MS);
+
+		}
+		if (xQueueReceive( xQueueAnalogY, &(Jy), ( TickType_t )  10 / portTICK_PERIOD_MS)) {
+			//sprintf(analog_y,";%d;",Jy);
+			//printf("%s",analog_y);
+			
+			afec_start_software_conversion(AFEC0);
+			xQueueSend( xQueueJY, &Jy, 0);
+			//vTaskDelay(1/portTICK_PERIOD_MS);
+
+		}
+		vTaskDelay(100);
+	}
+/*
 	while (1) {
-		if (xQueueReceive( xQueueAnalogX, &(Jx), ( TickType_t )  1 / portTICK_PERIOD_MS)) {
-			sprintf(analog_x,";%d;",Jx);
-			printf("%c",analog_x);
+		
+		printf("entrou");
+		
+		if (xQueueReceive( xQueueAnalogX, &(Jx), ( TickType_t )  2000 / portTICK_PERIOD_MS)) {
+			//sprintf(analog_x,";%d;",Jx);
+			//printf("%c",analog_x);
 			//analog_x = set_analog_result(Jx);
 			//printf("Temp : %d \r\n", tempVal);
-			afec_start_software_conversion(AFEC0);
+			afec_start_software_conversion(AFEC0); 
 			//xQueueSend( xQueueAnalogX, &analog_x, 0);
 			vTaskDelay(1/portTICK_PERIOD_MS);
 
-		}
-		if (xQueueReceive( xQueueAnalogY, &(Jy), ( TickType_t )  1 / portTICK_PERIOD_MS)) {
+		}		if (xQueueReceive( xQueueAnalogY, &(Jy), ( TickType_t )  1 / portTICK_PERIOD_MS)) {
 			//analog_y = set_analog_result(Jy);
 			sprintf(analog_y,";%d;",Jy);
 			//printf("Temp : %d \r\n", tempVal);
@@ -699,7 +750,9 @@ void task_afec(void){
 			vTaskDelay(2/portTICK_PERIOD_MS);
 
 		}
-	}
+		vTaskDelay(100/portTICK_PERIOD_MS);
+	}*/
+	
 }
 
 /************************************************************************/
@@ -720,6 +773,10 @@ int main(void){
 	
 	/* Create task to make buttons work */
 	xTaskCreate(task_buttons, "BUTS", TASK_PROCESS_STACK_SIZE, NULL,	TASK_PROCESS_STACK_PRIORITY, NULL);
+  
+  	/* Create task to make buttons work */
+  	xTaskCreate(task_afec, "AFEC", TASK_PROCESS_STACK_SIZE, NULL,	TASK_PROCESS_STACK_PRIORITY, NULL);
+  	
   
 	/* Start the scheduler. */
 	vTaskStartScheduler();
