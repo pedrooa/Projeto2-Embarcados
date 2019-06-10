@@ -6,8 +6,8 @@ import pyvjoy # Windows apenas
 
 class MyControllerMap:
 	def __init__(self):
-		self.button = {'Start': 1,'A': 2,'B':3}
-		self.joystick = {'Left':4,'Right':5,'Up':6,'Down':7}
+		self.button = {'Start': 1,'A': 2,'B':3,'Z':4}
+		self.joystick = {'Left':5,'Right':6,'Up':7,'Down':8}
 		
 		
 
@@ -54,6 +54,13 @@ class SerialControllerInterface:
 		elif data == b'0':
 			self.j.set_button(self.mapping.button['B'], 0)
 
+		data = self.ser.read()
+		if data == b'1':
+			logging.info("Sending press")
+			self.j.set_button(self.mapping.button['Z'], 1)
+		elif data == b'0':
+			self.j.set_button(self.mapping.button['Z'], 0)
+
 
 
 		data = self.ser.read() # ;
@@ -65,8 +72,12 @@ class SerialControllerInterface:
 			JX += data.decode('ascii')
 			data = self.ser.read()
 
-		JX = int(JX)
-		JX *= 8
+		if(JX != ""):
+
+			JX = int(JX)
+			JX *= 8
+		
+
 
 		self.j.set_axis(pyvjoy.HID_USAGE_X, JX)
 
@@ -74,12 +85,18 @@ class SerialControllerInterface:
 		data = self.ser.read()
 		JY = ""
 
+
+
 		while(data != b';'):
 			JY += data.decode('ascii')
 			data = self.ser.read()
 
-		JY = int(JY)
-		JY *= 8
+		if(JY != ""):
+			JY = int(JY)
+			JY *= 8
+
+		
+
 
 		self.j.set_axis(pyvjoy.HID_USAGE_Y, JY)
 

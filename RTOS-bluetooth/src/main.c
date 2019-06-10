@@ -117,6 +117,10 @@ QueueHandle_t xQueueAnalogX;
 QueueHandle_t xQueueAnalogY;
 QueueHandle_t xQueueJX;
 QueueHandle_t xQueueJY;
+QueueHandle_t xQueueAnalogCX;
+QueueHandle_t xQueueAnalogCY;
+QueueHandle_t xQueueCJX;
+QueueHandle_t xQueueCJY;
 volatile uint32_t g_tcCv = 0;
 
 /************************************************************************/
@@ -143,6 +147,18 @@ static void AFEC_Res_callback(void)
 }
 
 static void AFEC_Res_callback1(void)
+{
+	
+	g_res_value1 = afec_channel_get_value(AFEC0, AFEC_CHANNEL_RES_PIN1);
+	xQueueSendFromISR( xQueueAnalogY, &g_res_value1, 0);
+}
+static void AFEC_Res_callback2(void)
+{
+	g_res_value = afec_channel_get_value(AFEC0, AFEC_CHANNEL_RES_PIN);
+	xQueueSendFromISR( xQueueAnalogX, &g_res_value, 0);
+}
+
+static void AFEC_Res_callback3(void)
 {
 	
 	g_res_value1 = afec_channel_get_value(AFEC0, AFEC_CHANNEL_RES_PIN1);
@@ -534,18 +550,14 @@ void usart_put_string(Usart *usart, char str[]) {
 }
 
 int usart_get_string(Usart *usart, char buffer[], int bufferlen, uint timeout_ms) {
-  uint timecounter = timeout_ms;
   uint32_t rx;
   uint32_t counter = 0;
   
-  while( (timecounter > 0) && (counter < bufferlen - 1)) {
+  uint32_t start = xTaskGetTickCount();
+  while( (xTaskGetTickCount() - start < timeout_ms) && (counter < bufferlen - 1)) {
     if(usart_read(usart, &rx) == 0) {
       buffer[counter++] = rx;
     }
-    else{
-      timecounter--;
-      vTaskDelay(1);
-    }    
   }
   buffer[counter] = 0x00;
   return counter;
@@ -574,11 +586,12 @@ void hc05_config_server(void) {
 
 int hc05_server_init(void) {
   char buffer_rx[128];
-  usart_send_command(USART0, buffer_rx, 1000, "AT", 100); printf("AT\n");
-  usart_send_command(USART0, buffer_rx, 1000, "AT", 100);
-  usart_send_command(USART0, buffer_rx, 1000, "AT+NAMEPedro", 100);
-  usart_send_command(USART0, buffer_rx, 1000, "AT", 100);
-  usart_send_command(USART0, buffer_rx, 1000, "AT+PIN5555", 100);
+  usart_send_command(USART0, buffer_rx, 1000, "AT", 100); printf(buffer_rx);
+  usart_send_command(USART0, buffer_rx, 1000, "AT", 100); printf(buffer_rx);
+  usart_send_command(USART0, buffer_rx, 1000, "AT", 100);printf(buffer_rx);
+  usart_send_command(USART0, buffer_rx, 1000, "AT+NAMEPedro", 1000);printf(buffer_rx);
+  usart_send_command(USART0, buffer_rx, 1000, "AT", 1000);printf(buffer_rx);
+  usart_send_command(USART0, buffer_rx, 1000, "AT+PIN5555", 1000);printf(buffer_rx);
 }
 
 /************************************************************************/
@@ -588,7 +601,7 @@ int hc05_server_init(void) {
 void task_bluetooth(void){
 	
 		
-		xQueueBUTA = xQueueCreate( 10, sizeof( int32_t ) );
+		xQueueBUTA = xQueueCreate( 10, sizeof( char ) );
 		xQueueBUTB = xQueueCreate( 10, sizeof( int32_t ) );
 		xQueueBUTZ = xQueueCreate( 10, sizeof( int32_t ) );
 		xQueueBUTSTART = xQueueCreate( 10, sizeof( int32_t ) );
@@ -601,6 +614,7 @@ void task_bluetooth(void){
   printf("Bluetooth initializing \n");
   hc05_config_server();
   hc05_server_init();
+  printf("Config done \n");
   io_init();
   
   while(1){
@@ -613,26 +627,14 @@ void task_bluetooth(void){
 	char analog_x[32];
 	char analog_y[32];
 	
-	if (xQueueReceive( xQueueBUTA, &(buttonA), ( TickType_t ) 10 / portTICK_PERIOD_MS) || xQueueReceive( xQueueBUTB, &(buttonA), ( TickType_t ) 10 / portTICK_PERIOD_MS) || xQueueReceive( xQueueBUTZ, &(buttonA), ( TickType_t ) 10 / portTICK_PERIOD_MS)|| xQueueReceive( xQueueBUTSTART, &(buttonA), ( TickType_t ) 10 / portTICK_PERIOD_MS)|| xQueueReceive( xQueueJX, &(Jx), ( TickType_t ) 10 / portTICK_PERIOD_MS)|| xQueueReceive( xQueueJY, &(Jy), ( TickType_t ) 10 / portTICK_PERIOD_MS)) {
+	if (xQueueReceive( xQueueBUTA, &(buttonA), ( TickType_t ) 10 / portTICK_PERIOD_MS) || xQueueReceive( xQueueBUTB, &(buttonB), ( TickType_t ) 10 / portTICK_PERIOD_MS) || xQueueReceive( xQueueBUTZ, &(buttonZ), ( TickType_t ) 10 / portTICK_PERIOD_MS)|| xQueueReceive( xQueueBUTSTART, &(buttonStart), ( TickType_t ) 10 / portTICK_PERIOD_MS)|| xQueueReceive( xQueueJX, &(Jx), ( TickType_t ) 10 / portTICK_PERIOD_MS)|| xQueueReceive( xQueueJY, &(Jy), ( TickType_t ) 10 / portTICK_PERIOD_MS)) { 
 		sprintf(analog_x,";%d;",Jx);
 		sprintf(analog_y,";%d;",Jy);
+		printf("%c",buttonB);printf("%c",buttonA);
 		send_command(buttonStart,buttonA,buttonB,buttonZ,analog_x,analog_y,eof);
-		printf("A\n");
+		//printf("A\n");
+		//send_command(0,0,0,0,analog_x,analog_y,eof);
 	}
-/*
-	if (xQueueReceive( xQueueBUTB, &(buttonB), ( TickType_t ) 10 / portTICK_PERIOD_MS)) {
-		send_command(0,buttonA,0,eof);
-		printf("A\n");
-	}
-	if (xQueueReceive( xQueueBUTZ, &(buttonZ), ( TickType_t ) 10 / portTICK_PERIOD_MS)) {
-		send_command(0,buttonA,0,eof);
-		printf("A\n");
-	}
-	if (xQueueReceive( xQueueBUTSTART, &(buttonStart), ( TickType_t ) 10 / portTICK_PERIOD_MS)) {
-		send_command(0,buttonA,0,eof);
-		printf("A\n");
-	}*/
-	
     vTaskDelay( 10 / portTICK_PERIOD_MS);
   }
 }
@@ -647,8 +649,9 @@ void task_buttons(void *pvParameters)
 	char buttonA = '0';
 	char buttonB = '0'; 
 	char buttonStart = '0';
-	char eof = 'X';
-	char buffer[1024];
+	char buttonZ = '0';
+	//char eof = 'X';
+	//char buffer[1024];
 	
 	
 
@@ -667,24 +670,21 @@ void task_buttons(void *pvParameters)
 
 	while (true) {
 		if( xSemaphoreTake(xSemaphoreA, ( TickType_t ) 1) == pdTRUE){
-			//pisca_led(LEDA_PIO,LEDA_PIO_IDX_MASK);
-			int32_t teste = 1;
-			xQueueSend(xQueueBUTA, &teste,0);
+			pisca_led(LEDA_PIO,LEDA_PIO_IDX_MASK);
+			//printf("A\n");
+			xQueueSend(xQueueBUTA, &buttonA,1);
 		}
 		if( xSemaphoreTake(xSemaphoreB, ( TickType_t ) 1) == pdTRUE ){
 			pisca_led(LEDB_PIO,LEDB_PIO_IDX_MASK);
-			
-			xQueueSend(xQueueBUTB, '1',0);
+			xQueueSend(xQueueBUTB, &buttonB,1);
 		}
 		if( xSemaphoreTake(xSemaphoreZ, ( TickType_t ) 1) == pdTRUE ){
 			pisca_led(LEDZ_PIO,LEDZ_PIO_IDX_MASK);
-			
-			xQueueSend(xQueueBUTZ, '1',0);
+			xQueueSend(xQueueBUTZ, &buttonZ,1);
 		}
 		if( xSemaphoreTake(xSemaphoreStart, ( TickType_t ) 1) == pdTRUE ){
 			pisca_led(LEDSTART_PIO,LEDSTART_PIO_IDX_MASK);
-					
-			xQueueSend(xQueueBUTSTART, '1',0);
+			xQueueSend(xQueueBUTSTART, &buttonStart,1);
 		}
 		vTaskDelay(50);
 		
