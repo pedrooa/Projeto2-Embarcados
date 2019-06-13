@@ -99,14 +99,11 @@ SemaphoreHandle_t xSemaphoreB;
 SemaphoreHandle_t xSemaphoreZ;
 SemaphoreHandle_t xSemaphorePower;
 
-
-
 /** prototypes */
 void but_callback(void);
 static void ECHO_init(void);
 static void USART1_init(void);
 uint32_t usart_puts(uint8_t *pstring);
-
 
 QueueHandle_t xQueue1;
 QueueHandle_t xQueueBUTA;
@@ -132,6 +129,8 @@ volatile bool g_is_conversion_done = false;
 /** The conversion data value */
 volatile uint32_t g_res_value = 0;
 volatile uint32_t g_res_value1 = 0;
+volatile uint32_t g_res_value2 = 0;
+volatile uint32_t g_res_value3 = 0;
 
 
 /************************************************************************/
@@ -143,26 +142,34 @@ volatile uint32_t g_res_value1 = 0;
 static void AFEC_Res_callback(void)
 {
 	g_res_value = afec_channel_get_value(AFEC0, AFEC_CHANNEL_RES_PIN);
+	afec_channel_enable(AFEC0, AFEC_CHANNEL_RES_PIN1);
+	afec_start_software_conversion(AFEC0);
 	xQueueSendFromISR( xQueueAnalogX, &g_res_value, 0);
+	
 }
 
 static void AFEC_Res_callback1(void)
 {
 	
 	g_res_value1 = afec_channel_get_value(AFEC0, AFEC_CHANNEL_RES_PIN1);
+	
+	afec_channel_enable(AFEC0, AFEC_CHANNEL_RES_PIN);
+	afec_start_software_conversion(AFEC0);
 	xQueueSendFromISR( xQueueAnalogY, &g_res_value1, 0);
+		
+	
 }
 static void AFEC_Res_callback2(void)
 {
 	g_res_value = afec_channel_get_value(AFEC0, AFEC_CHANNEL_RES_PIN);
-	xQueueSendFromISR( xQueueAnalogX, &g_res_value, 0);
+	xQueueSendFromISR( xQueueAnalogX, &g_res_value2, 0);
 }
 
 static void AFEC_Res_callback3(void)
 {
 	
 	g_res_value1 = afec_channel_get_value(AFEC0, AFEC_CHANNEL_RES_PIN1);
-	xQueueSendFromISR( xQueueAnalogY, &g_res_value1, 0);
+	xQueueSendFromISR( xQueueAnalogY, &g_res_value3, 0);
 }
 void butA_callback(void)
 {
@@ -295,7 +302,7 @@ void send_command(char buttonStart, char buttonA, char buttonB, char eof ){
 			usart_write(USART_COM, eof);
 }*/
 
-void send_command(char buttonStart , char buttonA, char buttonB, char buttonZ,char analog_x[], char analog_y[],char eof ){
+void send_command(char buttonStart , char buttonA, char buttonB, char buttonZ, char analog_x[], char analog_y[], char eof ){
 	while(!usart_is_tx_ready(USART_COM));
 	usart_write(USART_COM, buttonStart);
 	while(!usart_is_tx_ready(USART_COM));
@@ -540,9 +547,6 @@ static void config_ADC_TEMP_RES(void){
 	afec_temp_sensor_get_config_defaults(&afec_temp_sensor_cfg);
 	afec_temp_sensor_set_config(AFEC0, &afec_temp_sensor_cfg);
 
-	/* Selecina canal e inicializa convers?o */
-	afec_channel_enable(AFEC0, AFEC_CHANNEL_RES_PIN);
-	afec_channel_enable(AFEC0, AFEC_CHANNEL_RES_PIN1);
 }
 
 void usart_put_string(Usart *usart, char str[]) {
@@ -602,13 +606,13 @@ void task_bluetooth(void){
 	
 		
 		xQueueBUTA = xQueueCreate( 10, sizeof( char ) );
-		xQueueBUTB = xQueueCreate( 10, sizeof( int32_t ) );
-		xQueueBUTZ = xQueueCreate( 10, sizeof( int32_t ) );
-		xQueueBUTSTART = xQueueCreate( 10, sizeof( int32_t ) );
+		xQueueBUTB = xQueueCreate( 10, sizeof( char ) );
+		xQueueBUTZ = xQueueCreate( 10, sizeof( char ) );
+		xQueueBUTSTART = xQueueCreate( 10, sizeof( char ) );
 		xQueueJX = xQueueCreate(10, sizeof(int32_t));
-		xQueueJY = xQueueCreate(10,sizeof(int32_t));
+		xQueueJY = xQueueCreate(10, sizeof(int32_t));
 
-		char eof = 'X';
+		char eof = '\n';
 		char buffer[1024];
   
   printf("Bluetooth initializing \n");
@@ -627,15 +631,20 @@ void task_bluetooth(void){
 	char analog_x[32];
 	char analog_y[32];
 	
-	if (xQueueReceive( xQueueBUTA, &(buttonA), ( TickType_t ) 10 / portTICK_PERIOD_MS) || xQueueReceive( xQueueBUTB, &(buttonB), ( TickType_t ) 10 / portTICK_PERIOD_MS) || xQueueReceive( xQueueBUTZ, &(buttonZ), ( TickType_t ) 10 / portTICK_PERIOD_MS)|| xQueueReceive( xQueueBUTSTART, &(buttonStart), ( TickType_t ) 10 / portTICK_PERIOD_MS)|| xQueueReceive( xQueueJX, &(Jx), ( TickType_t ) 10 / portTICK_PERIOD_MS)|| xQueueReceive( xQueueJY, &(Jy), ( TickType_t ) 10 / portTICK_PERIOD_MS)) { 
+	if (xQueueReceive( xQueueBUTA, &(buttonA), ( TickType_t ) 5 / portTICK_PERIOD_MS) || 
+	    xQueueReceive( xQueueBUTB, &(buttonB), ( TickType_t ) 0 / portTICK_PERIOD_MS) || 
+		xQueueReceive( xQueueBUTZ, &(buttonZ), ( TickType_t ) 0 / portTICK_PERIOD_MS) || 
+		xQueueReceive( xQueueBUTSTART, &(buttonStart), ( TickType_t ) 0 / portTICK_PERIOD_MS) || 
+		xQueueReceive( xQueueJX, &(Jx), ( TickType_t ) 0 / portTICK_PERIOD_MS) || 
+		xQueueReceive( xQueueJY, &(Jy), ( TickType_t ) 0 / portTICK_PERIOD_MS)) { 
 		sprintf(analog_x,";%d;",Jx);
 		sprintf(analog_y,";%d;",Jy);
-		printf("%c",buttonB);printf("%c",buttonA);
+		printf("%s",analog_y);
+		//printf("%c",buttonA);
 		send_command(buttonStart,buttonA,buttonB,buttonZ,analog_x,analog_y,eof);
-		//printf("A\n");
 		//send_command(0,0,0,0,analog_x,analog_y,eof);
 	}
-    vTaskDelay( 10 / portTICK_PERIOD_MS);
+    vTaskDelay( 10 );
   }
 }
 void task_buttons(void *pvParameters)
@@ -646,12 +655,11 @@ void task_buttons(void *pvParameters)
 	xSemaphoreStart = xSemaphoreCreateBinary();
 	
 	
-	char buttonA = '0';
-	char buttonB = '0'; 
-	char buttonStart = '0';
-	char buttonZ = '0';
-	//char eof = 'X';
-	//char buffer[1024];
+	char buttonA = '1';
+	char buttonB = '1'; 
+	char buttonStart = '1';
+	char buttonZ = '1';
+
 	
 	
 
@@ -669,24 +677,24 @@ void task_buttons(void *pvParameters)
 	}
 
 	while (true) {
-		if( xSemaphoreTake(xSemaphoreA, ( TickType_t ) 1) == pdTRUE){
+		if( xSemaphoreTake(xSemaphoreA, ( TickType_t ) 0) == pdTRUE){
 			pisca_led(LEDA_PIO,LEDA_PIO_IDX_MASK);
 			//printf("A\n");
 			xQueueSend(xQueueBUTA, &buttonA,1);
 		}
-		if( xSemaphoreTake(xSemaphoreB, ( TickType_t ) 1) == pdTRUE ){
+		if( xSemaphoreTake(xSemaphoreB, ( TickType_t ) 0) == pdTRUE ){
 			pisca_led(LEDB_PIO,LEDB_PIO_IDX_MASK);
 			xQueueSend(xQueueBUTB, &buttonB,1);
 		}
-		if( xSemaphoreTake(xSemaphoreZ, ( TickType_t ) 1) == pdTRUE ){
+		if( xSemaphoreTake(xSemaphoreZ, ( TickType_t ) 0) == pdTRUE ){
 			pisca_led(LEDZ_PIO,LEDZ_PIO_IDX_MASK);
 			xQueueSend(xQueueBUTZ, &buttonZ,1);
 		}
-		if( xSemaphoreTake(xSemaphoreStart, ( TickType_t ) 1) == pdTRUE ){
+		if( xSemaphoreTake(xSemaphoreStart, ( TickType_t ) 0) == pdTRUE ){
 			pisca_led(LEDSTART_PIO,LEDSTART_PIO_IDX_MASK);
 			xQueueSend(xQueueBUTSTART, &buttonStart,1);
 		}
-		vTaskDelay(50);
+	vTaskDelay(10);
 		
 	}
 }
@@ -696,62 +704,29 @@ void task_afec(void){
 	xQueueAnalogY = xQueueCreate( 10, sizeof( int32_t ) );
 	config_ADC_TEMP_RES();
 	afec_start_software_conversion(AFEC0);
-
-/*
-	uint32_t g_res_value = 0;
-	uint32_t g_res_value1 = 0;*/
 	uint32_t Jx;
 	uint32_t Jy;
-	char analog_x[32];
-	char analog_y[32];
 	
+	afec_channel_enable(AFEC0, AFEC_CHANNEL_RES_PIN);
+	afec_start_software_conversion(AFEC0);
 	
 	while(1){
-		if (xQueueReceive( xQueueAnalogX, &(Jx), ( TickType_t )  10 / portTICK_PERIOD_MS)) {
-			//sprintf(analog_x,";%d;",Jx);
-			//printf("%s",analog_x);
+		if (xQueueReceive( xQueueAnalogX, &(Jx), ( TickType_t )  1 / portTICK_PERIOD_MS)) {
+			xQueueSend( xQueueJX, &Jx, 1);
+
+		}
+		if (xQueueReceive( xQueueAnalogY, &(Jy), ( TickType_t )  1 / portTICK_PERIOD_MS)) {
+			xQueueSend( xQueueJY, &Jy, 1);
+
+		}
 		
-			afec_start_software_conversion(AFEC0);
-			xQueueSend( xQueueJX, &Jx, 0);
-			//vTaskDelay(1/portTICK_PERIOD_MS);
-
-		}
-		if (xQueueReceive( xQueueAnalogY, &(Jy), ( TickType_t )  10 / portTICK_PERIOD_MS)) {
-			//sprintf(analog_y,";%d;",Jy);
-			//printf("%s",analog_y);
-			
-			afec_start_software_conversion(AFEC0);
-			xQueueSend( xQueueJY, &Jy, 0);
-			//vTaskDelay(1/portTICK_PERIOD_MS);
-
-		}
-		vTaskDelay(100);
+		/* Selecina canal e inicializa convers?o */
+		
+		vTaskDelay(50);
+		
+		
 	}
-/*
-	while (1) {
-		
-		printf("entrou");
-		
-		if (xQueueReceive( xQueueAnalogX, &(Jx), ( TickType_t )  2000 / portTICK_PERIOD_MS)) {
-			//sprintf(analog_x,";%d;",Jx);
-			//printf("%c",analog_x);
-			//analog_x = set_analog_result(Jx);
-			//printf("Temp : %d \r\n", tempVal);
-			afec_start_software_conversion(AFEC0); 
-			//xQueueSend( xQueueAnalogX, &analog_x, 0);
-			vTaskDelay(1/portTICK_PERIOD_MS);
 
-		}		if (xQueueReceive( xQueueAnalogY, &(Jy), ( TickType_t )  1 / portTICK_PERIOD_MS)) {
-			//analog_y = set_analog_result(Jy);
-			sprintf(analog_y,";%d;",Jy);
-			//printf("Temp : %d \r\n", tempVal);
-			afec_start_software_conversion(AFEC0);
-			//xQueueSend( xQueueAnalogY, &analog_y, 0);
-			vTaskDelay(2/portTICK_PERIOD_MS);
-
-		}
-		vTaskDelay(100/portTICK_PERIOD_MS);
-	}*/
 	
 }
 
