@@ -8,6 +8,8 @@
 
 #define AFEC_CHANNEL_RES_PIN 0 //PD30
 #define AFEC_CHANNEL_RES_PIN1 8 //PA19
+#define AFEC_CHANNEL_CX_PIN 1 //PC13
+#define AFEC_CHANNEL_CY_PIN 6 //PC31
 
 /** Reference voltage for AFEC,in mv. */
 #define VOLT_REF        (3300)
@@ -31,11 +33,12 @@
 #define BUTB_PIO_IDX       6u
 #define BUTB_PIO_IDX_MASK  (1u << BUTB_PIO_IDX)
 
-//Configs button Select
+//Configs button Z
 #define BUTZ_PIO           PIOA
 #define BUTZ_PIO_ID        ID_PIOA
 #define BUTZ_PIO_IDX       24u
 #define BUTZ_PIO_IDX_MASK  (1u << BUTZ_PIO_IDX)
+
 
 //Configs button Start
 #define BUTSTART_PIO           PIOA
@@ -43,38 +46,6 @@
 #define BUTSTART_PIO_IDX       2u
 #define BUTSTART_PIO_IDX_MASK  (1u << BUTSTART_PIO_IDX)
 
-//LEDS
-
-//Configs LED A
-#define LEDA_PIO  PIOB
-#define LEDA_PIO_ID ID_PIOB
-#define LEDA_PIO_IDX 2u
-#define LEDA_PIO_IDX_MASK (1u << LEDA_PIO_IDX)
-
-#define LEDB_PIO PIOB
-#define LEDB_PIO_ID ID_PIOB
-#define LEDB_PIO_IDX 3u
-#define LEDB_PIO_IDX_MASK (1u << LEDB_PIO_IDX)
-
-
-#define LEDZ_PIO PIOC
-#define LEDZ_PIO_ID ID_PIOC
-#define LEDZ_PIO_IDX 30u
-#define LEDZ_PIO_IDX_MASK (1u << LEDZ_PIO_IDX)
-
-#define LEDSTART_PIO PIOC
-#define LEDSTART_PIO_ID ID_PIOC
-#define LEDSTART_PIO_IDX 17u
-#define LEDSTART_PIO_IDX_MASK (1u << LEDSTART_PIO_IDX)
-
-
-
-/*
-// TRIGGER
-#define LED_PIO      PIOC
-#define LED_PIO_ID   ID_PIOC
-#define LED_IDX      30
-#define LED_IDX_MASK (1 << LED_IDX)*/
 
 // usart (bluetooth)
 #define USART_COM_ID ID_USART0
@@ -116,8 +87,6 @@ QueueHandle_t xQueueJX;
 QueueHandle_t xQueueJY;
 QueueHandle_t xQueueAnalogCX;
 QueueHandle_t xQueueAnalogCY;
-QueueHandle_t xQueueCJX;
-QueueHandle_t xQueueCJY;
 volatile uint32_t g_tcCv = 0;
 
 /************************************************************************/
@@ -161,15 +130,21 @@ static void AFEC_Res_callback1(void)
 }
 static void AFEC_Res_callback2(void)
 {
-	g_res_value = afec_channel_get_value(AFEC0, AFEC_CHANNEL_RES_PIN);
-	xQueueSendFromISR( xQueueAnalogX, &g_res_value2, 0);
+	g_res_value2 = afec_channel_get_value(AFEC1, AFEC_CHANNEL_CX_PIN);
+		afec_channel_enable(AFEC1, AFEC_CHANNEL_CY_PIN);
+		afec_start_software_conversion(AFEC1);
+	xQueueSendFromISR( xQueueAnalogCX, &g_res_value2, 0);
 }
 
 static void AFEC_Res_callback3(void)
 {
 	
-	g_res_value1 = afec_channel_get_value(AFEC0, AFEC_CHANNEL_RES_PIN1);
-	xQueueSendFromISR( xQueueAnalogY, &g_res_value3, 0);
+	g_res_value3 = afec_channel_get_value(AFEC1, AFEC_CHANNEL_CY_PIN);
+			afec_channel_enable(AFEC1, AFEC_CHANNEL_CX_PIN);
+					afec_start_software_conversion(AFEC1);
+
+
+	xQueueSendFromISR( xQueueAnalogCY, &g_res_value3, 0);
 }
 void butA_callback(void)
 {
@@ -249,60 +224,34 @@ extern void vApplicationMallocFailedHook(void)
 /* funcoes                                                              */
 /************************************************************************/
 
-/*
-char set_analog_result(uint32_t input) {
-	char b[32];
-	sprintf(b, ";%d;", input);
-	printf(b);
-	return b;
-	
-}*/
 
 
-
-void pisca_led(uint LED_PIO, uint LED_IDX_MASK){
-	pio_set(LED_PIO, LED_IDX_MASK);
-	vTaskDelay(50);
-	pio_clear(LED_PIO, LED_IDX_MASK);
+char set_analog_result_cx(uint32_t input) {
+	if (input > 3600) {
+		return '5';//d
+		} else if (input < 1100) {
+		return '6';//e
+		} else {
+		return '0';
+	}
 }
+
+char set_analog_result_cy(uint32_t input) {
+	if (input > 3600) {
+		return '7';//b
+		} else if (input < 1100) {
+		return '8';//c
+		} else {
+		return '0';
+	}
+}
+
 
 //Configura envio de comandos pelo bluetooth
 
-/*
-void send_command(char buttonStart, char buttonA, char buttonB, char eof ){
-			while(!usart_is_tx_ready(USART_COM));
-			usart_write(USART_COM, buttonStart);
-			while(!usart_is_tx_ready(USART_COM));
-			usart_write(USART_COM, buttonA);
-			while(!usart_is_tx_ready(USART_COM));
-			usart_write(USART_COM, buttonB);
-			while(!usart_is_tx_ready(USART_COM));
-			usart_write(USART_COM, analog_x[0]);
-			int x = 1;
-			while(analog_x[x]!= ';'){
-				while(!usart_is_tx_ready(USART_COM));
-				usart_write(USART_COM, analog_x[x]);
-				x+=1;
-			}
-			while(!usart_is_tx_ready(USART_COM));
-			usart_write(USART_COM, analog_x[x]);
-			while(!usart_is_tx_ready(USART_COM));
-			usart_write(USART_COM, analog_y[0]);
-			int y = 1;
-			while(analog_y[y]!= ';'){
-				while(!usart_is_tx_ready(USART_COM));
-				usart_write(USART_COM, analog_y[y]);
-				y+=1;
-			}
-			while(!usart_is_tx_ready(USART_COM));
-			usart_write(USART_COM, analog_y[y]);
-			
 
-			while(!usart_is_tx_ready(USART_COM));
-			usart_write(USART_COM, eof);
-}*/
 
-void send_command(char buttonStart , char buttonA, char buttonB, char buttonZ, char analog_x[], char analog_y[], char eof ){
+void send_command(char buttonStart , char buttonA, char buttonB, char buttonZ,char analog_cx,char analog_cy, char analog_x[], char analog_y[], char eof ){
 	while(!usart_is_tx_ready(USART_COM));
 	usart_write(USART_COM, buttonStart);
 	while(!usart_is_tx_ready(USART_COM));
@@ -311,6 +260,10 @@ void send_command(char buttonStart , char buttonA, char buttonB, char buttonZ, c
 	usart_write(USART_COM, buttonB);
 	while(!usart_is_tx_ready(USART_COM));
 	usart_write(USART_COM, buttonZ);
+	while(!usart_is_tx_ready(USART_COM));
+	usart_write(USART_COM, analog_cx);
+	while(!usart_is_tx_ready(USART_COM));
+	usart_write(USART_COM, analog_cy);
 	while(!usart_is_tx_ready(USART_COM));
 	usart_write(USART_COM, analog_x[0]);
 	int x = 1;
@@ -403,10 +356,7 @@ void io_init(void){
   // com prioridade 4 (quanto mais próximo de 0 maior)
   NVIC_EnableIRQ(BUTA_PIO_ID);
   NVIC_SetPriority(BUTA_PIO_ID, 4); // Prioridade 4s
-  
-  
-    pmc_enable_periph_clk(LEDA_PIO_ID);
-    pio_configure(LEDA_PIO, PIO_OUTPUT_0, LEDA_PIO_IDX_MASK, PIO_DEFAULT);
+
 
   //**************************************************************
 
@@ -433,9 +383,6 @@ void io_init(void){
   // com prioridade 4 (quanto mais próximo de 0 maior)
   NVIC_EnableIRQ(BUTB_PIO_ID);
   NVIC_SetPriority(BUTB_PIO_ID, 4); // Prioridade 4
-  
-  pmc_enable_periph_clk(LEDB_PIO_ID);
-  pio_configure(LEDB_PIO, PIO_OUTPUT_0, LEDB_PIO_IDX_MASK, PIO_DEFAULT);
 
   //**************************************************************
 
@@ -465,9 +412,7 @@ void io_init(void){
   // com prioridade 4 (quanto mais próximo de 0 maior)
   NVIC_EnableIRQ(BUTZ_PIO_ID);
   NVIC_SetPriority(BUTZ_PIO_ID, 4); // Prioridade 4
-  
-  pmc_enable_periph_clk(LEDZ_PIO_ID);
-  pio_configure(LEDZ_PIO, PIO_OUTPUT_0, LEDZ_PIO_IDX_MASK, PIO_DEFAULT);
+
 
   // **************************************************************
 
@@ -494,11 +439,7 @@ void io_init(void){
   // com prioridade 4 (quanto mais próximo de 0 maior)
   NVIC_EnableIRQ(BUTSTART_PIO_ID);
   NVIC_SetPriority(BUTSTART_PIO_ID, 4); // Prioridade 4
-	
-
-  // Configura led
-	pmc_enable_periph_clk(LEDSTART_PIO);
-	pio_configure(LEDSTART_PIO, PIO_OUTPUT_0, LEDSTART_PIO_IDX_MASK, PIO_DEFAULT);
+	
 }
 
 static void config_ADC_TEMP_RES(void){
@@ -507,6 +448,7 @@ static void config_ADC_TEMP_RES(void){
    *************************************/
   /* Ativa AFEC - 0 */
 	afec_enable(AFEC0);
+	afec_enable(AFEC1);
 
 	/* struct de configuracao do AFEC */
 	struct afec_config afec_cfg;
@@ -516,14 +458,16 @@ static void config_ADC_TEMP_RES(void){
 
 	/* Configura AFEC */
 	afec_init(AFEC0, &afec_cfg);
-
+		afec_init(AFEC1, &afec_cfg);
 	/* Configura trigger por software */
 	afec_set_trigger(AFEC0, AFEC_TRIG_SW);
-
+		afec_set_trigger(AFEC1, AFEC_TRIG_SW);
 
 	/* configura call back */
 	afec_set_callback(AFEC0, AFEC_INTERRUPT_EOC_0, AFEC_Res_callback, 5);
 	afec_set_callback(AFEC0, AFEC_INTERRUPT_EOC_8, AFEC_Res_callback1, 5);
+	afec_set_callback(AFEC1, AFEC_INTERRUPT_EOC_1, AFEC_Res_callback2, 5);
+	afec_set_callback(AFEC1, AFEC_INTERRUPT_EOC_6, AFEC_Res_callback3, 5);
 	
 
 	/*** Configuracao espec?fica do canal AFEC ***/
@@ -531,6 +475,9 @@ static void config_ADC_TEMP_RES(void){
 	afec_ch_get_config_defaults(&afec_ch_cfg);
 	afec_ch_cfg.gain = AFEC_GAINVALUE_0;
 	afec_ch_set_config(AFEC0, AFEC_CHANNEL_RES_PIN, &afec_ch_cfg);
+	afec_ch_set_config(AFEC0, AFEC_CHANNEL_RES_PIN1, &afec_ch_cfg);
+		afec_ch_set_config(AFEC1, AFEC_CHANNEL_CX_PIN, &afec_ch_cfg);
+		afec_ch_set_config(AFEC1, AFEC_CHANNEL_CY_PIN, &afec_ch_cfg);
 
 	/*
 	* Calibracao:
@@ -540,12 +487,15 @@ static void config_ADC_TEMP_RES(void){
 	
 	afec_channel_set_analog_offset(AFEC0, AFEC_CHANNEL_RES_PIN1, 0x200);
 	afec_channel_set_analog_offset(AFEC0, AFEC_CHANNEL_RES_PIN, 0x200);
+	afec_channel_set_analog_offset(AFEC1, AFEC_CHANNEL_CX_PIN, 0x200);
+	afec_channel_set_analog_offset(AFEC1, AFEC_CHANNEL_CY_PIN, 0x200);
 
 	/***  Configura sensor de temperatura ***/
 	struct afec_temp_sensor_config afec_temp_sensor_cfg;
 
 	afec_temp_sensor_get_config_defaults(&afec_temp_sensor_cfg);
 	afec_temp_sensor_set_config(AFEC0, &afec_temp_sensor_cfg);
+		afec_temp_sensor_set_config(AFEC1, &afec_temp_sensor_cfg);
 
 }
 
@@ -605,47 +555,67 @@ int hc05_server_init(void) {
 void task_bluetooth(void){
 	
 		
-		xQueueBUTA = xQueueCreate( 10, sizeof( char ) );
-		xQueueBUTB = xQueueCreate( 10, sizeof( char ) );
-		xQueueBUTZ = xQueueCreate( 10, sizeof( char ) );
-		xQueueBUTSTART = xQueueCreate( 10, sizeof( char ) );
-		xQueueJX = xQueueCreate(10, sizeof(int32_t));
-		xQueueJY = xQueueCreate(10, sizeof(int32_t));
+	xQueueBUTA = xQueueCreate( 10, sizeof( char ) );
+	xQueueBUTB = xQueueCreate( 10, sizeof( char ) );
+	xQueueBUTZ = xQueueCreate( 10, sizeof( char ) );
+	xQueueBUTSTART = xQueueCreate( 10, sizeof( char ) );
+	xQueueAnalogX = xQueueCreate( 10, sizeof( int32_t ) );
+	xQueueAnalogY = xQueueCreate( 10, sizeof( int32_t ) );
+	xQueueAnalogCX = xQueueCreate( 10, sizeof( int32_t ) );
+	xQueueAnalogCY = xQueueCreate( 10, sizeof( int32_t ) );
 
-		char eof = '\n';
-		char buffer[1024];
+	char eof = 'X';
+	char buffer[1024];
   
-  printf("Bluetooth initializing \n");
-  hc05_config_server();
-  hc05_server_init();
-  printf("Config done \n");
-  io_init();
-  
-  while(1){
-	char buttonA = '0';
-	char buttonB = '0';
-	char buttonZ = '0';
-	char buttonStart = '0';
-	uint32_t Jx;
-	uint32_t Jy;
-	char analog_x[32];
-	char analog_y[32];
+	printf("Bluetooth initializing \n");
+	hc05_config_server();
+	hc05_server_init();
+	printf("Config done \n");
+	config_ADC_TEMP_RES();
+	io_init();
+
+
 	
-	if (xQueueReceive( xQueueBUTA, &(buttonA), ( TickType_t ) 5 / portTICK_PERIOD_MS) || 
-	    xQueueReceive( xQueueBUTB, &(buttonB), ( TickType_t ) 0 / portTICK_PERIOD_MS) || 
-		xQueueReceive( xQueueBUTZ, &(buttonZ), ( TickType_t ) 0 / portTICK_PERIOD_MS) || 
-		xQueueReceive( xQueueBUTSTART, &(buttonStart), ( TickType_t ) 0 / portTICK_PERIOD_MS) || 
-		xQueueReceive( xQueueJX, &(Jx), ( TickType_t ) 0 / portTICK_PERIOD_MS) || 
-		xQueueReceive( xQueueJY, &(Jy), ( TickType_t ) 0 / portTICK_PERIOD_MS)) { 
-		sprintf(analog_x,";%d;",Jx);
-		sprintf(analog_y,";%d;",Jy);
-		printf("%s",analog_y);
-		//printf("%c",buttonA);
-		send_command(buttonStart,buttonA,buttonB,buttonZ,analog_x,analog_y,eof);
-		//send_command(0,0,0,0,analog_x,analog_y,eof);
+	afec_channel_enable(AFEC0, AFEC_CHANNEL_RES_PIN);
+	afec_start_software_conversion(AFEC0);
+	afec_channel_enable(AFEC1, AFEC_CHANNEL_CX_PIN);
+	afec_start_software_conversion(AFEC1);
+  
+	while(1){
+		char buttonA = '0';
+		char buttonB = '0';
+		char buttonZ = '0';
+		char buttonStart = '0';
+		char analogcx = '0';
+		char analogcy = '0';
+		uint32_t Jx = 2150;
+		uint32_t Jy = 2150;
+		uint32_t Cx = 2150;
+		uint32_t Cy = 2150;
+		char analog_x[32];
+		char analog_y[32];
+	
+		if (xQueueReceive( xQueueBUTA, &(buttonA), ( TickType_t ) 0 / portTICK_PERIOD_MS) || 
+			xQueueReceive( xQueueBUTB, &(buttonB), ( TickType_t ) 0 / portTICK_PERIOD_MS) || 
+			xQueueReceive( xQueueBUTZ, &(buttonZ), ( TickType_t ) 0 / portTICK_PERIOD_MS) || 
+			xQueueReceive( xQueueBUTSTART, &(buttonStart), ( TickType_t ) 0 / portTICK_PERIOD_MS) || 
+			(xQueueReceive( xQueueAnalogY, &(Jy), ( TickType_t ) 5 / portTICK_PERIOD_MS) &&
+			xQueueReceive( xQueueAnalogX, &(Jx), ( TickType_t ) 5 / portTICK_PERIOD_MS) &&
+			xQueueReceive( xQueueAnalogCY, &(Cy), ( TickType_t ) 5 / portTICK_PERIOD_MS) &&
+			xQueueReceive( xQueueAnalogCX, &(Cx), ( TickType_t ) 5 / portTICK_PERIOD_MS))
+			)
+			{ 
+			sprintf(analog_x,";%d;",Jx);
+			sprintf(analog_y,";%d;",Jy);
+			analogcx = set_analog_result_cx(Cx);
+			analogcy = set_analog_result_cy(Cy);
+		
+			printf("%d\n",Cy);
+			printf("%d\n",Cx);
+			send_command(buttonStart,buttonA,buttonB,buttonZ,analogcx,analogcy,analog_x,analog_y,eof);
+		}
+		//vTaskDelay( 10 );
 	}
-    vTaskDelay( 10 );
-  }
 }
 void task_buttons(void *pvParameters)
 {
@@ -678,23 +648,19 @@ void task_buttons(void *pvParameters)
 
 	while (true) {
 		if( xSemaphoreTake(xSemaphoreA, ( TickType_t ) 0) == pdTRUE){
-			pisca_led(LEDA_PIO,LEDA_PIO_IDX_MASK);
-			//printf("A\n");
+
 			xQueueSend(xQueueBUTA, &buttonA,1);
 		}
 		if( xSemaphoreTake(xSemaphoreB, ( TickType_t ) 0) == pdTRUE ){
-			pisca_led(LEDB_PIO,LEDB_PIO_IDX_MASK);
 			xQueueSend(xQueueBUTB, &buttonB,1);
 		}
 		if( xSemaphoreTake(xSemaphoreZ, ( TickType_t ) 0) == pdTRUE ){
-			pisca_led(LEDZ_PIO,LEDZ_PIO_IDX_MASK);
 			xQueueSend(xQueueBUTZ, &buttonZ,1);
 		}
 		if( xSemaphoreTake(xSemaphoreStart, ( TickType_t ) 0) == pdTRUE ){
-			pisca_led(LEDSTART_PIO,LEDSTART_PIO_IDX_MASK);
 			xQueueSend(xQueueBUTSTART, &buttonStart,1);
 		}
-	vTaskDelay(10);
+	//vTaskDelay(10);
 		
 	}
 }
@@ -722,7 +688,7 @@ void task_afec(void){
 		
 		/* Selecina canal e inicializa convers?o */
 		
-		vTaskDelay(50);
+		vTaskDelay(10);
 		
 		
 	}
@@ -750,7 +716,7 @@ int main(void){
 	xTaskCreate(task_buttons, "BUTS", TASK_PROCESS_STACK_SIZE, NULL,	TASK_PROCESS_STACK_PRIORITY, NULL);
   
   	/* Create task to make buttons work */
-  	xTaskCreate(task_afec, "AFEC", TASK_PROCESS_STACK_SIZE, NULL,	TASK_PROCESS_STACK_PRIORITY, NULL);
+  	//xTaskCreate(task_afec, "AFEC", TASK_PROCESS_STACK_SIZE, NULL,	TASK_PROCESS_STACK_PRIORITY, NULL);
   	
   
 	/* Start the scheduler. */

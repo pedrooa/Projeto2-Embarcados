@@ -2,6 +2,7 @@ import serial
 import argparse
 import time
 import logging
+import time
 import pyvjoy # Windows apenas
 
 class MyControllerMap:
@@ -19,21 +20,37 @@ class SerialControllerInterface:
 	# byte 2 -> EOP - End of Packet -> valor reservado 'X'
 
 	def __init__(self, port, baudrate):
-		self.ser = serial.Serial(port, baudrate=baudrate)
+		self.ser = serial.Serial(port, baudrate=baudrate, timeout = 2)
 		self.mapping = MyControllerMap()
 		self.j = pyvjoy.VJoyDevice(1)
 		self.incoming = '0'
-
-
+		self.baudrate = baudrate
+		self.port = port
 
 
 	def update(self):
+		print("ENTROU")
 		## Sync protocol
-		while self.incoming != b'X':
+		while (self.incoming != b'X' and self.incoming != b''):
 			self.incoming = self.ser.read()
 			logging.debug("Received INCOMING: {}".format(self.incoming))
 
 		data = self.ser.read()
+
+		while(data == b''):
+			self.ser.close()
+			print("Conexao perdida\nTentando Reconectar em 2 segundos ...")
+			try:
+				self.ser = serial.Serial(self.port,baudrate=self.baudrate,timeout=2)
+				data = self.ser.read()
+			except Exception as e:
+				print("Falha ao abrir porta serial")
+			
+			
+			time.sleep(2)
+
+		print("UAI")
+		print(data)
 		if data == b'1':
 			logging.info("Sending press")
 			self.j.set_button(self.mapping.button['Start'], 1)
@@ -41,6 +58,7 @@ class SerialControllerInterface:
 			self.j.set_button(self.mapping.button['Start'], 0)
 
 		data = self.ser.read()
+		print(data)
 		if data == b'1':
 			logging.info("Sending press")
 			self.j.set_button(self.mapping.button['A'], 1)
@@ -48,6 +66,7 @@ class SerialControllerInterface:
 			self.j.set_button(self.mapping.button['A'], 0)
 
 		data = self.ser.read()
+		print(data)
 		if data == b'1':
 			logging.info("Sending press")
 			self.j.set_button(self.mapping.button['B'], 1)
@@ -55,6 +74,7 @@ class SerialControllerInterface:
 			self.j.set_button(self.mapping.button['B'], 0)
 
 		data = self.ser.read()
+		print(data)
 		if data == b'1':
 			logging.info("Sending press")
 			self.j.set_button(self.mapping.button['Z'], 1)
@@ -63,88 +83,87 @@ class SerialControllerInterface:
 
 
 
-		data = self.ser.read() # ;
+
+
 		data = self.ser.read()
+		if data == b'5':
+			logging.info("Sending press")
+			self.j.set_button(self.mapping.joystick['Left'], 1)
+		elif data == b'6':
+			logging.info("Sending press")
+			self.j.set_button(self.mapping.joystick['Right'], 1)
+		elif data == b'0':
+			self.j.set_button(self.mapping.joystick['Right'], 0)
+			self.j.set_button(self.mapping.joystick['Left'], 0)
+
+
+		data = self.ser.read()
+		if data == b'7':
+			logging.info("Sending press")
+			self.j.set_button(self.mapping.joystick['Up'], 1)
+		elif data == b'8':
+			logging.info("Sending press")
+			self.j.set_button(self.mapping.joystick['Down'], 1)
+		elif data == b'0':
+			self.j.set_button(self.mapping.joystick['Up'], 0)
+			self.j.set_button(self.mapping.joystick['Down'], 0)
+
+
+
+		data = self.ser.read() 
+		print(data);# ;
+		data = self.ser.read()
+		print(data);
 		JX = ""
 		#joystick += data
 
-		while(data!= b';'):
+		while(data!= b';' and data!= b''):
 			JX += data.decode('ascii')
 			data = self.ser.read()
 
 		if(JX != ""):
-
 			JX = int(JX)
 			JX *= 8
-		
 
+			# try:
+			# 	JX = int(JX)
+			# 	JX *= 8
+			# except:
+			# 	print("Erro na conversao do JX")
+	
 
 		self.j.set_axis(pyvjoy.HID_USAGE_X, JX)
 
-		data = self.ser.read() # ;
 		data = self.ser.read()
+		print(data) # ;
+		data = self.ser.read()
+		print(data)
 		JY = ""
 
-
-
-		while(data != b';'):
+		while(data != b';' and data!= b''):
 			JY += data.decode('ascii')
 			data = self.ser.read()
+			print(data);
 
 		if(JY != ""):
-			JY = int(JY)
-			JY *= 8
 
-		
+			JY = int(JY)
+			JY *= 8		
+
+			# try:
+			# 	JY = int(JY)
+			# 	JY *= 8		
+			# except Exception as e:
+			# 	print("ERRO:",e)
+			# else:
+			# 	print("erro inesperado")
+			# finally:
+			# 	pass
+
+
 
 
 		self.j.set_axis(pyvjoy.HID_USAGE_Y, JY)
-
-
-
-
-
-
-
-
-		# data = self.ser.read() 
-		# if data == b'2':
-		# 	logging.info("Sending press")
-		# 	self.j.set_button(self.mapping.joystick['Left'], 1)
-		# elif data == b'3':
-		# 	logging.info("Sending press")
-		# 	self.j.set_button(self.mapping.joystick['Right'], 1)
-		# elif data == b'0':
-		# 	self.j.set_button(self.mapping.joystick['Right'], 0)
-		# 	self.j.set_button(self.mapping.joystick['Left'], 0)
-
-
-		# data = self.ser.read()
-		# if data == b'5':
-		# 	logging.info("Sending press")
-		# 	self.j.set_button(self.mapping.joystick['Up'], 1)
-		# elif data == b'4':
-		# 	logging.info("Sending press")
-		# 	self.j.set_button(self.mapping.joystick['Down'], 1)
-		# elif data == b'0':
-		# 	self.j.set_button(self.mapping.joystick['Up'], 0)
-		# 	self.j.set_button(self.mapping.joystick['Down'], 0)
-
-
-		# data = self.ser.read()
-		# self.j.set_axis(pyvjoy.HID_USAGE_X,data);
-
-
-		# data = self.ser.read()
-		# logging.debug("Received DATA: {}".format(data))
-
-		# if data == b'3':
-		#     logging.info("Sending press")
-		#     self.j.set_button(self.mapping.button['B'], 1)
-		# elif data == b'0':
-		#     self.j.set_button(self.mapping.button['B'], 0)
-
-
 
 		self.incoming = self.ser.read()
 
@@ -181,3 +200,5 @@ if __name__ == '__main__':
 
 	while True:
 		controller.update()
+		print("SAIU")
+
