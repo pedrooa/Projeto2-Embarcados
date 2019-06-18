@@ -29,7 +29,6 @@ class SerialControllerInterface:
 
 
 	def update(self):
-		print("ENTROU")
 		## Sync protocol
 		while (self.incoming != b'X' and self.incoming != b''):
 			self.incoming = self.ser.read()
@@ -49,7 +48,6 @@ class SerialControllerInterface:
 			
 			time.sleep(2)
 
-		print("UAI")
 		print(data)
 		if data == b'1':
 			logging.info("Sending press")
@@ -125,11 +123,7 @@ class SerialControllerInterface:
 			JX = int(JX)
 			JX *= 8
 
-			# try:
-			# 	JX = int(JX)
-			# 	JX *= 8
-			# except:
-			# 	print("Erro na conversao do JX")
+
 	
 
 		self.j.set_axis(pyvjoy.HID_USAGE_X, JX)
@@ -150,15 +144,6 @@ class SerialControllerInterface:
 			JY = int(JY)
 			JY *= 8		
 
-			# try:
-			# 	JY = int(JY)
-			# 	JY *= 8		
-			# except Exception as e:
-			# 	print("ERRO:",e)
-			# else:
-			# 	print("erro inesperado")
-			# finally:
-			# 	pass
 
 
 
@@ -200,5 +185,4 @@ if __name__ == '__main__':
 
 	while True:
 		controller.update()
-		print("SAIU")
 
